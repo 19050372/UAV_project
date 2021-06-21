@@ -55,8 +55,11 @@
 /* state difines */
 #define IDLE_STATE 0
 #define NOODSTOP_STATE 1
+#define JIP_EVELIEN 2
+#define FLORIS 3
 
 int state = IDLE_STATE;
+
 
 //const bool simulator = true;
 struct Vect {
@@ -209,6 +212,8 @@ void setup() {
   somas /= 1000;
   /* Eind gyroscoop */
 
+  state = JIP_EVELIEN;
+
 }
 
 void loop() {
@@ -308,6 +313,10 @@ void loop() {
         errorsomw += errorw*dt;
 
         F_moment += F_hoek;
+        break;
+      case FLORIS:
+        // 
+        regelaar_floris();
         break;
       default:
         // Idle state

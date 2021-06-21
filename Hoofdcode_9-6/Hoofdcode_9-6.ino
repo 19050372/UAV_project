@@ -1,5 +1,4 @@
 #include <math.h>
-#include <Wire.h>
 #include "MPU9250.h"
 
 /* pin defines */
@@ -10,13 +9,13 @@
 #define RECHTS_PWM_PIN    12
 #define RECHTS_VOORUIT    13
 #define RECHTS_ACHTERUIT  14
-#define ZIJ_PWM_PIN       15
-#define ZIJ_VOORUIT       16
-#define ZIJ_ACHTERUIT     17
+#define ZIJ_PWM_PIN       22
+#define ZIJ_VOORUIT       9
+#define ZIJ_ACHTERUIT     8
 // Time-of-Flight xshut pins
-#define TOF_VOOR        4
-#define TOF_ZIJ_VOOR    5
-#define TOF_ZIJ_ACHTER  6
+#define TOF_VOOR        5 // klopt
+#define TOF_ZIJ_VOOR    7 // klopt
+#define TOF_ZIJ_ACHTER  6 // klopt
 // relaits
 #define HOOFD_RELAIT  7
 #define VENT_RELAIT   8
@@ -26,7 +25,7 @@
 /* systeem constanten */
 // hovercraft traagheden en afmetingen constante
 #define M 1.216   // massa                          in kg
-#define I 0.024   // traagheidsmoment               in kg.m^2
+#define I 0.0246   // traagheidsmoment               in kg.m^2
 #define LE 0.45 // lengte                         in m
 #define BR 0.29 // breedte                        in m
 #define D 0.1355  // afstand motor tot middenlijn   in m
@@ -52,10 +51,17 @@
 #define MOTOR_ZIJ_VOOR_FUNC(F) 2000*F - 50
 #define MOTOR_ZIJ_ACHTER_FUNC(F) 2000*F - 50
 
+/* Waardes Gyroscoop */
+MPU9250 IMU(Wire,0x68);
+int status;
+int resetteller1 = 49;
+int resetteller2 = 0;
+int resetteller3 = 0;
+float xs, ys, as, xa, ya, angle, xc, yc, xai, xaiold, yai, yaiold, asi, asiold, somxa, somya, somas;
+
 /* state difines */
 #define IDLE_STATE 0
 #define NOODSTOP_STATE 1
-
 int state = IDLE_STATE;
 
 //const bool simulator = true;
@@ -69,7 +75,6 @@ struct Vect {
 //Vect a = {0.0, 0.0};    // versnelling  in m/s^2
 //Vect v = {0.0, 0.0};  // snelheid     in m/s
 //Vect s = {0.0, 0.0};  // afstand      in m
-//rotatie domein
 float a_x = 0.0;
 float a_y = 0.0;
 float v_x = 0.0;
@@ -107,42 +112,15 @@ const float Kiw = 0.1;       // integrale verstekingsfactor standregelaar
 float spw = 0;       // Setpoint standregelaar
 float errorw, error_oudw, derrw, xw, errorsomw; //variabelen standregelaar
 
+
 /* Cycle variables */
 const float cyclustijd = 100;  // cyclustijd van de superloop  in ms
 long t_oud, t_nw;
 float dt;
 int dt_ms;
 
-/* globale regelaar variable */
-float F_vooruit, F_moment, F_zijwaards;
-
-/* variablen Floris */
-bool debug = true;
-const float sp_f = 30; //setpoint
-const float kp_f = 3; // propertionele versterkingsfactor
-const float kd_f = 10; // differentionele versterkingsfactor
-const float ki_f = 0;
-
-float x_f;
-float F_f;
-float error_f, d_err_f;
-float error_som_f;
-float error_oud_f  = 0;
-float F_oud_f = -1.0;
-
-/* functie declaratie */
-float I2C_master();
-void regelaar_floris();
-void hoofd_motorsturing(float Fv, float bF, float F_zij);
-void set_pwm_links(float F);
-void set_pwm_rechts(float F);
-void set_pwm_zij(float F);
-
 void setup() {
   Serial.begin(57600);
-
-  // begin i2c connectie
-  Wire.begin();
 
   /* set pin in-/ output */
   // outputs
@@ -183,9 +161,9 @@ void setup() {
   
   digitalWrite(HOOFD_RELAIT, LOW);
   digitalWrite(VENT_RELAIT, LOW);
-
+  
   t_oud = millis();
-
+  
   /* Gyroscoop */
   // start communication with IMU  
   status = IMU.begin();
@@ -214,107 +192,95 @@ void setup() {
 void loop() {
   t_nw = millis();
   dt_ms = t_nw - t_oud;
-  if (dt_ms > cyclustijd)
-  {
+  if (dt_ms > cyclustijd){
+
+    /* Tijd definiëren */
     dt = dt_ms * .001;
     t_oud = t_nw;
 
-    // De krachten reseten
-    F_vooruit = 0;
-    F_moment = 0;
-    F_zijwaards = 0;
+    /* Gyroscoop */
+     //reset van de ruis
+    if((asi > -6) && (asi < 6)){
+      resetteller1++;
+      asiold += asi;
+      if (resetteller1 == 50){
+        somas = asiold/50;
+        resetteller1 = 0;
+        if(angle < 10 && angle > -10){
+           angle = 0;
+        }  
+      }
+    }
+    if((xai > -0.2) && (xai < 0.2)){
+      resetteller2++;
+      xaiold += xai;
+      if (resetteller2 == 10){
+        somxa = xaiold/10;
+        xaiold = 0;
+        resetteller2 = 0;
+        if(xs < 0.5 && xs > -0.5){
+           xs = 0;
+        } 
+        
+      }
+    }
+    if((yai > -0.3) && (yai < 0.3)){
+      resetteller3++;
+      yaiold += yai;
+      if (resetteller3 == 10){
+        somya = yaiold/10;
+        yaiold = 0;
+        resetteller3 = 0;
+        if(ys < 2 && ys > -2){
+           ys = 0;
+        }
+      }
+    }
+    // read the sensor
+    IMU.readSensor();
+  
+    // data
+    asi = IMU.getGyroZ_rads()/3.14159265359*180;  // hoeksnelheid inlezing
+    as = asi - somas;           // hoeksnelheid met correctie
+    angle = angle + (as * dt);  // hoek
 
+    // Opletten x omgekeerd, x is vooruit
+    xai = IMU.getAccelX_mss();  // x-as versnelling inlezing
+    xa = xai - somxa;           // x-as versnelling met correctie
+    xs = xs + (xa * dt);        // x-as snelheid
+    xc = xc + (xs * dt);        // x-as positie
+    
+    yai = IMU.getAccelY_mss();  // y-as versnelling inlezing
+    ya = yai - somya;           // y-as versnelling met correctie
+    ys = ys + (ya * dt);        // y-as snelheid
+    yc = yc + (ys * dt);        // y-as positie
+    /* Eind Gyroscoop */
+    
+    /* Regelaars */
+    
+    // Snelheidsregelaar Jip
+    sne_error = sne_sp - xs;                // Snelheid setpoint - positie : voor Proportionele versterking
+    sne_d_error = sne_error - sne_error_oud;   // Snelheid errorverschil : voor Derivitive versterking
+    F_v = sne_Kp * sne_error + sne_Kd * sne_d_error / dt; // C, PD regelaar
+    F_v = constrain(F_v, Fmin, Fmax);
+    sne_error_oud = sne_error;
+
+    // Standregelaar Evelien
+    errorw = spw - theta; //theta = hoek gyro
+    derrw = errorw - error_oudw;
+    F_hoek = Kpw * errorw + Kdw * derrw / dt + Kiw * errorsomw * dt;
+    F_hoek = constrain(F_hoek, Fmin, Fmax);
+    error_oudw = errorw;
+    errorsomw += errorw*dt;
+    
     switch (state) {
       case NOODSTOP_STATE:
         // noodstop code
-        break;
-      case JIP_EVELIEN:
-        // 
-        /* Gyroscoop */
-         //reset van de ruis
-        if((asi > -6) && (asi < 6)){
-          resetteller1++;
-          asiold += asi;
-          if (resetteller1 == 50){
-            somas = asiold/50;
-            resetteller1 = 0;
-            if(angle < 10 && angle > -10){
-               angle = 0;
-            }  
-          }
-        }
-        if((xai > -0.2) && (xai < 0.2)){
-          resetteller2++;
-          xaiold += xai;
-          if (resetteller2 == 10){
-            somxa = xaiold/10;
-            xaiold = 0;
-            resetteller2 = 0;
-            if(xs < 0.5 && xs > -0.5){
-               xs = 0;
-            } 
-            
-          }
-        }
-        if((yai > -0.3) && (yai < 0.3)){
-          resetteller3++;
-          yaiold += yai;
-          if (resetteller3 == 10){
-            somya = yaiold/10;
-            yaiold = 0;
-            resetteller3 = 0;
-            if(ys < 2 && ys > -2){
-               ys = 0;
-            }
-          }
-        }
-        // read the sensor
-        IMU.readSensor();
-      
-        // data
-        asi = IMU.getGyroZ_rads()/3.14159265359*180;  // hoeksnelheid inlezing
-        as = asi - somas;           // hoeksnelheid met correctie
-        angle = angle + (as * dt);  // hoek
-    
-        // Opletten x omgekeerd, x is vooruit
-        xai = IMU.getAccelX_mss();  // x-as versnelling inlezing
-        xa = xai - somxa;           // x-as versnelling met correctie
-        xs = xs + (xa * dt);        // x-as snelheid
-        xc = xc + (xs * dt);        // x-as positie
-        
-        yai = IMU.getAccelY_mss();  // y-as versnelling inlezing
-        ya = yai - somya;           // y-as versnelling met correctie
-        ys = ys + (ya * dt);        // y-as snelheid
-        yc = yc + (ys * dt);        // y-as positie
-        /* Eind Gyroscoop */
-        
-        /* Regelaars */
-        
-        // Snelheidsregelaar Jip
-        sne_error = sne_sp - xs;                // Snelheid setpoint - positie : voor Proportionele versterking
-        sne_d_error = sne_error - sne_error_oud;   // Snelheid errorverschil : voor Derivitive versterking
-        F_v = sne_Kp * sne_error + sne_Kd * sne_d_error / dt; // C, PD regelaar
-        F_v = constrain(F_v, Fmin, Fmax);
-        sne_error_oud = sne_error;
-
-        F_vooruit += F_v;
-    
-        // Standregelaar Evelien
-        errorw = spw - theta; //theta = hoek gyro
-        derrw = errorw - error_oudw;
-        F_hoek = Kpw * errorw + Kdw * derrw / dt + Kiw * errorsomw * dt;
-        F_hoek = constrain(F_hoek, Fmin, Fmax);
-        error_oudw = errorw;
-        errorsomw += errorw*dt;
-
-        F_moment += F_hoek;
         break;
       default:
         // Idle state
         break;
     }
-
-    hoofd_motorsturing(F_vooruit, F_moment, F_zijwaards);
 
   }
 }
@@ -392,70 +358,4 @@ void set_pwm_zij(float F) {
   // limiteer het pwm sigaal dus de uiterst mogelijke waarden
   pwm = constrain(pwm, 0, 254);
   analogWrite(ZIJ_PWM_PIN, int(pwm));
-}
-
-float I2C_master() {
-  String x;
-  float y = 0;
-
-  Wire.beginTransmission(9); // transmit to device #9
-  Wire.write("x"); // sends one bytes
-  Wire.endTransmission(); // stop transmitting
-  delay(15); // Maak deze niet te klein! Maar geen delay gebruiken.
-  Wire.requestFrom(9, 50); // request 9 bytes from slave device #2
-  while (Wire.available()) // slave may send less than requested
-  {
-    char c;
-    c = Wire.read(); // receive a byte as character
-    if (isDigit(c) or c == '.') {  // tests if myChar is a digit
-      x = x + c;
-    }
-
-  }
-  y = x.toFloat();
-  return y;
-}
-
-void regelaar_floris()
-{
-  
-  // regelaar
-  x = I2C_master();
-  //  if (x == 0)
-  //  {
-  //    F = F_oud;
-  //  }
-  error = sp - x;
-  if (error < 0 )
-  {
-    if(error > -1)
-    {
-      error = 0;
-    }
-    else if (error < -10)
-    {
-      error = -10;
-    }
-    
-  }
-  else if (error > 0)
-  {
-    if (error < 1)
-    {
-      error = 0;
-    }
-    else if (error > 10)
-    {
-      error = 10;
-    }
-  }
-  error = error /100;
-  d_err = error - error_oud;
-  error_som += error;
-  error_som = constrain(error_som, 0, 0.1);
-  F = -(kp * error + ((kd * d_err) / dt) + ki * error_som * dt);
-  F = constrain(F, Fmin, Fmax);
-  F_oud = F;
-  error_oud = error;
-
 }
