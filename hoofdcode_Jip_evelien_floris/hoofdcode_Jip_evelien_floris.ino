@@ -22,6 +22,10 @@
 #define VENT_RELAIT   8
 // knoppen
 #define NOODSTOP_KNOP 18
+// batterie cells
+#define BAT_CELL1 A0
+#define BAT_CELL2 A1
+#define BAT_CELL3 A2
 
 /* systeem constanten */
 // hovercraft traagheden en afmetingen constante
@@ -55,11 +59,11 @@
 /* state difines */
 #define IDLE_STATE 0
 #define NOODSTOP_STATE 1
-#define JIP_EVELIEN 2
-#define FLORIS 3
+#define LOW_POWER 2
+#define JIP_EVELIEN 3
+#define FLORIS 4
 
 int state = IDLE_STATE;
-
 
 //const bool simulator = true;
 struct Vect {
@@ -94,6 +98,8 @@ float F_v = 0.0; // Kracht voor voorwaartse beweging
 // Stand regelaar 
 float F_hoek = 0.1;   // N, standregelaar
 
+// afsluit voltage van de van een cell
+const int low_cell_volt = 1024/5 * 3;
 
 /*Waardes regelaar */
 // Snelheids regelaar Jip
@@ -140,6 +146,7 @@ void hoofd_motorsturing(float Fv, float bF, float F_zij);
 void set_pwm_links(float F);
 void set_pwm_rechts(float F);
 void set_pwm_zij(float F);
+void check_bat_cells();
 
 void setup() {
   Serial.begin(57600);
@@ -224,6 +231,8 @@ void loop() {
     dt = dt_ms * .001;
     t_oud = t_nw;
 
+    check_bat_cells();
+
     // De krachten reseten
     F_vooruit = 0;
     F_moment = 0;
@@ -233,8 +242,14 @@ void loop() {
       case NOODSTOP_STATE:
         // noodstop code
         break;
+      case LOW_POWER:
+        // een van de cellen is 3 volt of onder
+        /*
+         * zet de relais uit
+         */
+        break;
       case JIP_EVELIEN:
-        // 
+        // stabiel met een constante senlheid vooruit (hoekverdraaing en snelheids regelaar)
         /* Gyroscoop */
          //reset van de ruis
         if((asi > -6) && (asi < 6)){
@@ -328,6 +343,18 @@ void loop() {
   }
 }
 
+void check_bat_cells() {
+  cell1 = analogRead(BAT_CELL1);
+  cell2 = analogRead(BAT_CELL2);
+  cell3 = analogRead(BAT_CELL3);
+
+  if (cell1 <= low_cell_volt || cell2 <= low_cell_volt || cell3 <= low_cell_volt)
+  {
+    state = LOW_POWER;
+  }
+}
+
+// hoofd aansturings functies van de motoren
 void hoofd_motorsturing(float Fv, float bF, float F_zij)  {
   
   float Flinks = Fv / 2 - bF / B;
