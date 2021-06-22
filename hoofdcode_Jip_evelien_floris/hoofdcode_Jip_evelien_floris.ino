@@ -1,31 +1,34 @@
 #include <math.h>
 #include <Wire.h>
 #include "MPU9250.h"
+#include <VL53L0X.h>
 
 /* pin defines */
 // motoren
-#define LINKS_PWM_PIN     9
-#define LINKS_VOORUIT     10
-#define LINKS_ACHTERUIT   11
-#define RECHTS_PWM_PIN    12
-#define RECHTS_VOORUIT    13
-#define RECHTS_ACHTERUIT  14
-#define ZIJ_PWM_PIN       15
-#define ZIJ_VOORUIT       16
-#define ZIJ_ACHTERUIT     17
+#define LINKS_PWM_PIN     10
+#define LINKS_VOORUIT     11
+#define LINKS_ACHTERUIT   12
+#define RECHTS_PWM_PIN    13
+#define RECHTS_VOORUIT    8
+#define RECHTS_ACHTERUIT  9
+#define ZIJ_PWM_PIN       2
+#define ZIJ_VOORUIT       3
+#define ZIJ_ACHTERUIT     4
 // Time-of-Flight xshut pins
-#define TOF_VOOR        4
-#define TOF_ZIJ_VOOR    5
-#define TOF_ZIJ_ACHTER  6
+#define TOF_VOOR_XSHUT        5
+#define TOF_ZIJ_VOOR_XSHUT    7
+#define TOF_ZIJ_ACHTER_XSHUT  6
 // relaits
-#define HOOFD_RELAIT  7
-#define VENT_RELAIT   8
+#define HOOFD_RELAIT  52
+#define VENT_RELAIT   53
 // knoppen
-#define NOODSTOP_KNOP 18
+#define NOODSTOP_KNOP 30
 // batterie cells
 #define BAT_CELL1 A0
 #define BAT_CELL2 A1
 #define BAT_CELL3 A2
+// Stroommeter pin
+#define STROOM_SENS A14
 
 /* systeem constanten */
 // hovercraft traagheden en afmetingen constante
@@ -101,6 +104,11 @@ float F_hoek = 0.1;   // N, standregelaar
 // afsluit voltage van de van een cell
 const int low_cell_volt = 1024/5 * 3;
 
+// Time of flight sensoren
+VL53L0X ToF_voor;
+VL53L0X Tof_zij_voor;
+VL53L0X ToF_zij_achter;
+
 /*Waardes regelaar */
 // Snelheids regelaar Jip
 const float sne_Kp = 6;                    // Snelheid Proportionele versterkingsfactor
@@ -165,10 +173,10 @@ void setup() {
   pinMode(ZIJ_PWM_PIN, OUTPUT);
   pinMode(ZIJ_VOORUIT, OUTPUT);
   pinMode(ZIJ_ACHTERUIT, OUTPUT);
-  
-  pinMode(TOF_VOOR, OUTPUT);
-  pinMode(TOF_ZIJ_VOOR, OUTPUT);
-  pinMode(TOF_ZIJ_ACHTER, OUTPUT);
+  // define de xshutpins van de tof als outputs
+  pinMode(TOF_VOOR_XSHUT, OUTPUT);
+  pinMode(TOF_ZIJ_VOOR_XSHUT, OUTPUT);
+  pinMode(TOF_ZIJ_ACHTER_XSHUT, OUTPUT);
   
   pinMode(HOOFD_RELAIT, OUTPUT);
   pinMode(VENT_RELAIT, OUTPUT);
@@ -186,14 +194,14 @@ void setup() {
   digitalWrite(ZIJ_PWM_PIN, LOW);
   digitalWrite(ZIJ_VOORUIT, LOW);
   digitalWrite(ZIJ_ACHTERUIT, LOW);
-  
-  digitalWrite(TOF_VOOR, HIGH);
-  digitalWrite(TOF_ZIJ_VOOR, HIGH);
-  digitalWrite(TOF_ZIJ_ACHTER, HIGH);
-  
+  // zet de 
+  digitalWrite(TOF_VOOR_XSHUT, LOW);
+  digitalWrite(TOF_ZIJ_VOOR_XSHUT, LOW);
+  digitalWrite(TOF_ZIJ_ACHTER_XSHUT, LOW);
+  // relais
   digitalWrite(HOOFD_RELAIT, LOW);
   digitalWrite(VENT_RELAIT, LOW);
-
+ 
   t_oud = millis();
 
   /* Gyroscoop */
@@ -218,6 +226,34 @@ void setup() {
   somya /= 1000;
   somas /= 1000;
   /* Eind gyroscoop */
+
+  /* set de adressen van de time of flight sensoren */
+  // set adderes van ToF naar voren kijkt
+  pinMode(TOF_VOOR_XSHUT, INPUT);
+  delay(150);
+  ToF_voor.init(true);
+  delay(100);
+  ToF_voor.setAddress((uint8_t)22);
+
+  // set adderes van de ToF zij voor
+  pinMode(TOF_ZIJ_VOOR_XSHUT, INPUT);
+  delay(150);
+  Tof_zij_voor.init(true);
+  delay(100);
+  Tof_zij_voor.setAddress((uint8_t)25);
+
+  // set adderes van de ToF zij voor
+  pinMode(TOF_ZIJ_ACHTER_XSHUT, INPUT);
+  delay(150);
+  ToF_zij_achter.init(true);
+  delay(100);
+  ToF_zij_achter.setAddress((uint8_t)28);
+
+  // geen idee wat hiet gebeurd *evelien schrijf eens een stukkie commentaar
+  ToF_voor.setTimeout(500);
+  Tof_zij_voor.setTimeout(500);
+  ToF_zij_achter.setTimeout(500);
+  
 
   state = JIP_EVELIEN;
 
